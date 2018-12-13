@@ -25,9 +25,14 @@ DISTFILES =
 TARGET=syncextract
 SOURCES=syncextract.c
 OBJS=syncextract.o
+
+TARGET2=dumptxt
+SOURCES2=dumptxt.c
+OBJS2=dumptxt.o
+
 LIB_OBJS=
 
-all: $(TARGET)
+all: $(TARGET) $(TARGET2)
 
 install: all
 	$(top_srcdir)/mkinstalldirs $(bindir)
@@ -38,9 +43,14 @@ install: all
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS) $(LIBS)
 
+$(TARGET2): $(OBJS2)
+	$(CC) $(CFLAGS) -o $(TARGET2) $(OBJS2) $(LDFLAGS) $(LIBS)
+
 $(OBJS): $(SOURCES)
 
-clean:
+$(OBJS2): $(SOURCES2)
+
+lean:
 	/bin/rm -f $(TARGET) *.o core
 
 distclean: clean config-clean

@@ -15,21 +15,23 @@
 
 void usage(char *progname)
 {
-  fprintf(stderr, "Usage: %s -f <file>\n", progname);
+  fprintf(stderr, "Usage: %s -f <file> [-d <output dir>]\n", progname);
 }
 
 typedef struct direntrymap_s {
   unsigned char filename[8];
   uint16_t offset_blocks;
   uint16_t length_blocks;
-  uint32_t checksum;
+  uint16_t checksum;
+  uint16_t type;
 } *direntrymap;
 
 typedef struct direntry_s {
   unsigned char filename[9];
   int offset;
   int length;
-  uint32_t checksum;
+  uint16_t checksum;
+  uint16_t type;
   struct direntry_s *next;
 } *direntry;
 
@@ -67,6 +69,7 @@ int array_null(unsigned char *array, int numelem) {
 
 // Free space: filename all nulls, offset_blocks and length_block non-empty
 // End of directory: all nulls
+
 int readDir(direntry *directory, unsigned char *filbuf) {
   int count= 0;
   int i = 0;
@@ -90,7 +93,13 @@ int readDir(direntry *directory, unsigned char *filbuf) {
       fname[8] = '\0';
       addDirentry(directory, fname, dmap->offset_blocks * BLOCKSIZE, dmap->length_blocks * BLOCKSIZE);
 #ifdef DEBUG
-      fprintf(stderr, "Adding file %d: \"%s\", offset = %d, size = %d bytes.\n", count, fname, dmap->offset_blocks * BLOCKSIZE, dmap->length_blocks * BLOCKSIZE);
+      fprintf(stderr, "Adding file %d: \"%s\", type=%d (%s), offset = %d, size = %d bytes, checksum = %d/0x%04x.\n",
+	      count,
+	      fname,
+	      dmap->type, dmap->type==0?"text":(dmap->type==1?"binary":(dmap->type==3?"overlay?":(dmap->type==6?"subdirectory":"unknown"))),
+	      dmap->offset_blocks * BLOCKSIZE,
+	      dmap->length_blocks * BLOCKSIZE,
+	      dmap->checksum, dmap->checksum);
 #endif
       count++;
     }
@@ -172,6 +181,7 @@ int main(int argc, char *argv[]) {
   }
   nfiles=readDir(&d, fmap);
   extractFiles(d, fmap, dirname);
+  munmap(fmap, filestats.st_size);
   close(infile);
   freeDir(&d);
 }
