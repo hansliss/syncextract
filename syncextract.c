@@ -35,15 +35,17 @@ typedef struct direntry_s {
   struct direntry_s *next;
 } *direntry;
 
-void addDirentry(direntry *dir, unsigned char *filename, int offset, int length) {
+void addDirentry(direntry *dir, unsigned char *filename, int offset, int length, int type, int checksum) {
   if (*dir != NULL && strcasecmp((char *)((*dir)->filename), (char *)filename) < 0) {
-    addDirentry(&((*dir)->next), filename, offset, length);
+    addDirentry(&((*dir)->next), filename, offset, length, type, checksum);
   } else {
     direntry tmp = (direntry)malloc(sizeof(struct direntry_s));
     tmp->next = *dir;
     strcpy((char *)(tmp->filename), (char *)filename);
     tmp->offset = offset;
     tmp->length = length;
+    tmp->type = type;
+    tmp->checksum = checksum;
     *dir = tmp;
   }
 }
@@ -70,7 +72,7 @@ int array_null(unsigned char *array, int numelem) {
 // Free space: filename all nulls, offset_blocks and length_block non-empty
 // End of directory: all nulls
 
-int readDir(direntry *directory, unsigned char *filbuf) {
+int readDir(direntry *directory, unsigned char *filbuf, char *dirname) {
   int count= 0;
   int i = 0;
   int done = 0;
@@ -91,10 +93,11 @@ int readDir(direntry *directory, unsigned char *filbuf) {
     } else {
       memcpy(fname, dmap->filename, 8);
       fname[8] = '\0';
-      addDirentry(directory, fname, dmap->offset_blocks * BLOCKSIZE, dmap->length_blocks * BLOCKSIZE);
+      addDirentry(directory, fname, dmap->offset_blocks * BLOCKSIZE, dmap->length_blocks * BLOCKSIZE, dmap->type, dmap->checksum);
 #ifdef DEBUG
-      fprintf(stderr, "Adding file %d: \"%s\", type=%d (%s), offset = %d, size = %d bytes, checksum = %d/0x%04x.\n",
+      fprintf(stderr, "Adding file %d: \"%s/%s\", type=%d (%s), offset = %d, size = %d bytes, checksum = %d/0x%04x.\n",
 	      count,
+	      dirname,
 	      fname,
 	      dmap->type, dmap->type==0?"text":(dmap->type==1?"binary":(dmap->type==3?"overlay?":(dmap->type==6?"subdirectory":"unknown"))),
 	      dmap->offset_blocks * BLOCKSIZE,
@@ -115,9 +118,9 @@ int extractFiles(direntry d, unsigned char *filbuf, char *dirname) {
   struct stat dirstats;
   FILE *ofile;
   int count = 0;
-  static char ofilename[BUFSIZE];
+  char ofilename[BUFSIZE];
   if (stat(dirname, &dirstats) != 0) {
-    perror("fstat()");
+    perror(dirname);
     return 0;
   }
   if (!(dirstats.st_mode & S_IFDIR)) {
@@ -126,12 +129,20 @@ int extractFiles(direntry d, unsigned char *filbuf, char *dirname) {
   }
   while (d) {
     sprintf(ofilename, "%s/%s", dirname, d->filename);
-    if (!(ofile = fopen(ofilename, "w"))) {
-      perror(ofilename);
-      return 0;
+    if (d->type == 6) {
+      mkdir(ofilename, 0777);
+      direntry d2 = NULL;
+      readDir(&d2, &(filbuf[d->offset]), ofilename);
+      extractFiles(d2, &(filbuf[d->offset]), ofilename);
+      freeDir(&d2);
+    } else {
+      if (!(ofile = fopen(ofilename, "w"))) {
+	perror(ofilename);
+	return 0;
+      }
+      fwrite(&(filbuf[d->offset]), 1, d->length, ofile);
+      fclose(ofile);
     }
-    fwrite(&(filbuf[d->offset]), 1, d->length, ofile);
-    fclose(ofile);
     count++;
     d = d->next;
   }
@@ -163,6 +174,10 @@ int main(int argc, char *argv[]) {
         break;
       }
   }
+  if (optind < argc) {
+    usage(argv[0]);
+    return -1;
+  }
   if (infile == -1) {
     usage(argv[0]);
     return -1;
@@ -179,7 +194,7 @@ int main(int argc, char *argv[]) {
     perror("mmap()");
     return -3;
   }
-  nfiles=readDir(&d, fmap);
+  nfiles=readDir(&d, fmap, dirname);
   extractFiles(d, fmap, dirname);
   munmap(fmap, filestats.st_size);
   close(infile);
